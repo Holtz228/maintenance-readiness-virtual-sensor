@@ -1,0 +1,13 @@
+{
+  "target_sensor": "sensor_11",
+  "feature_count": 16,
+  "train_units": 80,
+  "validation_units": 20,
+  "baseline_mae": 0.2148757309941522,
+  "baseline_rmse": 0.27191468784507966,
+  "baseline_r2": -0.020820075933584814,
+  "model_mae": 0.08966896637288073,
+  "model_rmse": 0.11183498992428896,
+  "model_mape": 0.18855979420017735,
+  "model_r2": 0.8273210998008624
+}
