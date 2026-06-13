@@ -8,21 +8,24 @@ from typing import Any
 
 import pandas as pd
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
-SEARCH_ROOTS = [
-    PROJECT_ROOT / "data" / "processed",
-    PROJECT_ROOT / "data" / "output",
-    PROJECT_ROOT / "outputs",
-    PROJECT_ROOT / "output",
-]
+from src.config import (  # noqa: E402
+    ASSET_HEALTH_PATH,
+    MAINTENANCE_RECOMMENDATIONS_PATH,
+    SENSOR_PROFILE_PATH,
+    SENSOR_READINGS_PATH,
+    VIRTUAL_SENSOR_METRICS_PATH,
+    VIRTUAL_SENSOR_MODEL_PATH,
+    VIRTUAL_SENSOR_PREDICTIONS_PATH,
+)
 
 
 @dataclass(frozen=True)
 class DatasetSpec:
     name: str
-    patterns: list[str]
+    path: Path
     required_columns: list[str]
     score_columns: list[str]
 
@@ -30,26 +33,18 @@ class DatasetSpec:
 DATASET_SPECS = [
     DatasetSpec(
         name="sensor_readings",
-        patterns=[
-            "*sensor_readings*.parquet",
-            "*sensor_readings*.csv",
-            "*readings*.parquet",
-            "*readings*.csv",
-        ],
+        path=SENSOR_READINGS_PATH,
         required_columns=[
             "unit_number",
             "time_cycle",
+            "remaining_useful_life",
+            "max_cycle",
         ],
         score_columns=[],
     ),
     DatasetSpec(
         name="sensor_profile",
-        patterns=[
-            "*sensor_profile*.parquet",
-            "*sensor_profile*.csv",
-            "*profile*.parquet",
-            "*profile*.csv",
-        ],
+        path=SENSOR_PROFILE_PATH,
         required_columns=[
             "sensor",
             "missing_rate",
@@ -64,20 +59,17 @@ DATASET_SPECS = [
     ),
     DatasetSpec(
         name="predictions",
-        patterns=[
-            "*prediction*.parquet",
-            "*prediction*.csv",
-            "*virtual_sensor*.parquet",
-            "*virtual_sensor*.csv",
-        ],
+        path=VIRTUAL_SENSOR_PREDICTIONS_PATH,
         required_columns=[
             "unit_number",
             "time_cycle",
             "actual_value",
             "predicted_value",
             "absolute_error",
+            "relative_error",
             "confidence_score",
             "fallback_status",
+            "sensor_failure_simulated",
             "evaluation_split",
         ],
         score_columns=[
@@ -86,43 +78,45 @@ DATASET_SPECS = [
     ),
     DatasetSpec(
         name="asset_health",
-        patterns=[
-            "*asset_health*.parquet",
-            "*asset_health*.csv",
-            "*health*.parquet",
-            "*health*.csv",
-        ],
+        path=ASSET_HEALTH_PATH,
         required_columns=[
             "asset_id",
+            "current_cycle",
             "estimated_rul",
-            "asset_health_score",
-            "readiness_tier",
-            "maintenance_priority",
-        ],
-        score_columns=[
-            "asset_health_score",
-            "maintenance_priority",
+            "rul_risk_score",
             "sensor_deviation_score",
             "virtual_sensor_confidence",
             "virtual_sensor_confidence_risk",
             "trend_risk_score",
+            "asset_health_score",
+            "readiness_tier",
+            "maintenance_priority",
+            "fallback_status",
+        ],
+        score_columns=[
             "rul_risk_score",
+            "sensor_deviation_score",
+            "virtual_sensor_confidence",
+            "virtual_sensor_confidence_risk",
+            "trend_risk_score",
+            "asset_health_score",
+            "maintenance_priority",
         ],
     ),
     DatasetSpec(
         name="recommendations",
-        patterns=[
-            "*recommendation*.parquet",
-            "*recommendation*.csv",
-            "*maintenance_action*.parquet",
-            "*maintenance_action*.csv",
-        ],
+        path=MAINTENANCE_RECOMMENDATIONS_PATH,
         required_columns=[
             "asset_id",
-            "recommended_action",
             "priority_score",
             "readiness_tier",
+            "recommended_action",
+            "time_horizon",
+            "reason",
             "estimated_rul",
+            "asset_health_score",
+            "sensor_deviation_score",
+            "virtual_sensor_confidence",
         ],
         score_columns=[
             "priority_score",
@@ -133,12 +127,28 @@ DATASET_SPECS = [
     ),
 ]
 
+EXPECTED_READINESS_TIERS = {
+    "Ready",
+    "Monitor",
+    "Maintenance Planned",
+    "Critical",
+}
 
-METRICS_PATTERNS = [
-    "*metrics*.json",
-    "*model_quality*.json",
-    "*model_metrics*.json",
-]
+EXPECTED_FALLBACK_STATUSES = {
+    "Reliable fallback",
+    "Limited fallback",
+    "Inspection required",
+    "Fallback not recommended",
+}
+
+EXPECTED_RECOMMENDED_ACTIONS = {
+    "Schedule maintenance",
+    "Replace sensor",
+    "Inspect sensor",
+    "Review asset before next production window",
+    "Continue limited monitoring",
+    "No immediate action",
+}
 
 
 class ValidationReporter:
@@ -183,29 +193,6 @@ class ValidationReporter:
         print(f"  Errors:   {len(self.errors)}")
 
 
-def existing_search_roots() -> list[Path]:
-    return [path for path in SEARCH_ROOTS if path.exists()]
-
-
-def find_latest_file(patterns: list[str]) -> Path | None:
-    candidates: list[Path] = []
-
-    for root in existing_search_roots():
-        for pattern in patterns:
-            candidates.extend(root.rglob(pattern))
-
-    candidates = [
-        path
-        for path in candidates
-        if path.is_file() and path.suffix.lower() in {".parquet", ".csv", ".json"}
-    ]
-
-    if not candidates:
-        return None
-
-    return max(candidates, key=lambda path: path.stat().st_mtime)
-
-
 def read_table(path: Path) -> pd.DataFrame:
     if path.suffix.lower() == ".parquet":
         return pd.read_parquet(path)
@@ -229,20 +216,30 @@ def read_json(path: Path) -> dict[str, Any]:
 def validate_file_exists(
     spec: DatasetSpec,
     reporter: ValidationReporter,
-) -> Path | None:
-    path = find_latest_file(spec.patterns)
-
-    if path is None:
+) -> bool:
+    if not spec.path.exists():
         reporter.error(
-            f"{spec.name}: expected output file not found. "
-            f"Checked patterns: {', '.join(spec.patterns)}"
+            f"{spec.name}: expected output file not found: "
+            f"{spec.path.relative_to(PROJECT_ROOT)}"
         )
-        return None
+        return False
 
-    relative_path = path.relative_to(PROJECT_ROOT)
-    reporter.ok(f"{spec.name}: found {relative_path}")
+    reporter.ok(f"{spec.name}: found {spec.path.relative_to(PROJECT_ROOT)}")
+    return True
 
-    return path
+
+def validate_model_file(reporter: ValidationReporter) -> None:
+    if not VIRTUAL_SENSOR_MODEL_PATH.exists():
+        reporter.error(
+            "model: expected virtual sensor model not found: "
+            f"{VIRTUAL_SENSOR_MODEL_PATH.relative_to(PROJECT_ROOT)}"
+        )
+        return
+
+    reporter.ok(
+        "model: found "
+        f"{VIRTUAL_SENSOR_MODEL_PATH.relative_to(PROJECT_ROOT)}"
+    )
 
 
 def validate_non_empty(
@@ -264,9 +261,7 @@ def validate_required_columns(
     reporter: ValidationReporter,
 ) -> None:
     missing_columns = [
-        column
-        for column in required_columns
-        if column not in df.columns
+        column for column in required_columns if column not in df.columns
     ]
 
     if missing_columns:
@@ -285,12 +280,20 @@ def validate_no_fully_empty_required_columns(
     required_columns: list[str],
     reporter: ValidationReporter,
 ) -> None:
-    for column in required_columns:
-        if column not in df.columns:
-            continue
+    empty_columns = [
+        column
+        for column in required_columns
+        if column in df.columns and df[column].isna().all()
+    ]
 
-        if df[column].isna().all():
-            reporter.error(f"{dataset_name}: required column '{column}' is fully empty.")
+    if empty_columns:
+        reporter.error(
+            f"{dataset_name}: required columns are fully empty: "
+            f"{', '.join(empty_columns)}"
+        )
+        return
+
+    reporter.ok(f"{dataset_name}: required columns are not fully empty.")
 
 
 def validate_score_ranges(
@@ -309,7 +312,7 @@ def validate_score_ranges(
         non_null_values = numeric_values.dropna()
 
         if non_null_values.empty:
-            reporter.warn(
+            reporter.error(
                 f"{dataset_name}: score column '{column}' has no numeric values."
             )
             continue
@@ -326,41 +329,32 @@ def validate_score_ranges(
             checked_columns += 1
 
     if checked_columns:
-        reporter.ok(f"{dataset_name}: {checked_columns} score columns are within 0-100.")
+        reporter.ok(
+            f"{dataset_name}: {checked_columns} score columns are within 0-100."
+        )
 
 
-def validate_recommendations(
-    recommendations: pd.DataFrame,
+def validate_allowed_values(
+    dataset_name: str,
+    df: pd.DataFrame,
+    column: str,
+    allowed_values: set[str],
     reporter: ValidationReporter,
 ) -> None:
-    if recommendations.empty:
-        reporter.error("recommendations: no maintenance recommendations available.")
+    if column not in df.columns:
         return
 
-    if "recommended_action" in recommendations.columns:
-        actionable = recommendations[
-            recommendations["recommended_action"].astype(str) != "No immediate action"
-        ]
+    observed_values = set(df[column].dropna().astype(str).unique())
+    unexpected_values = observed_values - allowed_values
 
-        if actionable.empty:
-            reporter.warn(
-                "recommendations: dataset exists, but no actionable recommendation was found."
-            )
-        else:
-            reporter.ok(
-                f"recommendations: {len(actionable):,} actionable recommendations found."
-            )
+    if unexpected_values:
+        reporter.error(
+            f"{dataset_name}: unexpected values in '{column}': "
+            f"{', '.join(sorted(unexpected_values))}"
+        )
+        return
 
-    if "priority_score" in recommendations.columns:
-        top_priority = pd.to_numeric(
-            recommendations["priority_score"],
-            errors="coerce",
-        ).max()
-
-        if pd.isna(top_priority):
-            reporter.error("recommendations: priority_score contains no numeric values.")
-        else:
-            reporter.ok(f"recommendations: highest priority score is {top_priority:.1f}.")
+    reporter.ok(f"{dataset_name}: '{column}' values are valid.")
 
 
 def validate_predictions(
@@ -371,36 +365,29 @@ def validate_predictions(
         reporter.error("predictions: no prediction records available.")
         return
 
-    if "evaluation_split" in predictions.columns:
-        split_counts = predictions["evaluation_split"].value_counts().to_dict()
+    split_counts = predictions["evaluation_split"].value_counts().to_dict()
 
-        if "validation" not in split_counts:
-            reporter.warn("predictions: no validation split found.")
-        else:
-            reporter.ok(
-                f"predictions: validation split contains {split_counts['validation']:,} rows."
-            )
+    if "validation" not in split_counts:
+        reporter.error("predictions: no validation split found.")
+    else:
+        reporter.ok(
+            f"predictions: validation split contains "
+            f"{split_counts['validation']:,} rows."
+        )
 
-    if "fallback_status" in predictions.columns:
-        status_counts = predictions["fallback_status"].value_counts().to_dict()
+    status_counts = predictions["fallback_status"].value_counts().to_dict()
+    reporter.ok(
+        "predictions: fallback statuses found: "
+        + ", ".join(f"{key}={value:,}" for key, value in status_counts.items())
+    )
 
-        if not status_counts:
-            reporter.error("predictions: fallback_status has no values.")
-        else:
-            reporter.ok(
-                "predictions: fallback statuses found: "
-                + ", ".join(f"{key}={value:,}" for key, value in status_counts.items())
-            )
-
-    if "absolute_error" in predictions.columns:
-        absolute_error = pd.to_numeric(predictions["absolute_error"], errors="coerce")
-
-        if absolute_error.dropna().empty:
-            reporter.error("predictions: absolute_error contains no numeric values.")
-        else:
-            reporter.ok(
-                f"predictions: average absolute error is {absolute_error.mean():.4f}."
-            )
+    absolute_error = pd.to_numeric(predictions["absolute_error"], errors="coerce")
+    if absolute_error.dropna().empty:
+        reporter.error("predictions: absolute_error contains no numeric values.")
+    else:
+        reporter.ok(
+            f"predictions: average absolute error is {absolute_error.mean():.4f}."
+        )
 
 
 def validate_asset_health(
@@ -411,20 +398,48 @@ def validate_asset_health(
         reporter.error("asset_health: no asset health records available.")
         return
 
-    if "readiness_tier" in asset_health.columns:
-        tier_counts = asset_health["readiness_tier"].value_counts().to_dict()
+    tier_counts = asset_health["readiness_tier"].value_counts().to_dict()
+    reporter.ok(
+        "asset_health: readiness tiers found: "
+        + ", ".join(f"{key}={value:,}" for key, value in tier_counts.items())
+    )
 
-        if not tier_counts:
-            reporter.error("asset_health: readiness_tier has no values.")
-        else:
-            reporter.ok(
-                "asset_health: readiness tiers found: "
-                + ", ".join(f"{key}={value:,}" for key, value in tier_counts.items())
-            )
+    asset_count = int(asset_health["asset_id"].nunique())
+    reporter.ok(f"asset_health: contains {asset_count:,} unique assets.")
 
-    if "asset_id" in asset_health.columns:
-        asset_count = int(asset_health["asset_id"].nunique())
-        reporter.ok(f"asset_health: contains {asset_count:,} unique assets.")
+
+def validate_recommendations(
+    recommendations: pd.DataFrame,
+    reporter: ValidationReporter,
+) -> None:
+    if recommendations.empty:
+        reporter.error("recommendations: no maintenance recommendations available.")
+        return
+
+    actionable = recommendations[
+        recommendations["recommended_action"].astype(str) != "No immediate action"
+    ]
+
+    if actionable.empty:
+        reporter.warn(
+            "recommendations: dataset exists, but no actionable recommendation was found."
+        )
+    else:
+        reporter.ok(
+            f"recommendations: {len(actionable):,} actionable recommendations found."
+        )
+
+    priority_score = pd.to_numeric(
+        recommendations["priority_score"],
+        errors="coerce",
+    )
+
+    if priority_score.dropna().empty:
+        reporter.error("recommendations: priority_score contains no numeric values.")
+    else:
+        reporter.ok(
+            f"recommendations: highest priority score is {priority_score.max():.1f}."
+        )
 
 
 def validate_dashboard_core_data(
@@ -456,45 +471,48 @@ def validate_dashboard_core_data(
 
 
 def validate_metrics(reporter: ValidationReporter) -> None:
-    metrics_path = find_latest_file(METRICS_PATTERNS)
-
-    if metrics_path is None:
-        reporter.warn(
-            "metrics: no metrics JSON file found. "
-            "This is acceptable if metrics are generated in memory, but a saved metrics file is better for reproducibility."
+    if not VIRTUAL_SENSOR_METRICS_PATH.exists():
+        reporter.error(
+            "metrics: expected metrics JSON not found: "
+            f"{VIRTUAL_SENSOR_METRICS_PATH.relative_to(PROJECT_ROOT)}"
         )
         return
 
     try:
-        metrics = read_json(metrics_path)
+        metrics = read_json(VIRTUAL_SENSOR_METRICS_PATH)
     except Exception as exc:
         reporter.error(f"metrics: could not read metrics file: {exc}")
         return
 
-    relative_path = metrics_path.relative_to(PROJECT_ROOT)
-    reporter.ok(f"metrics: found {relative_path}")
+    reporter.ok(
+        "metrics: found "
+        f"{VIRTUAL_SENSOR_METRICS_PATH.relative_to(PROJECT_ROOT)}"
+    )
 
     expected_keys = [
         "target_sensor",
+        "feature_count",
+        "train_units",
+        "validation_units",
+        "baseline_mae",
+        "baseline_rmse",
+        "baseline_r2",
         "model_mae",
+        "model_rmse",
+        "model_mape",
         "model_r2",
     ]
 
-    missing_keys = [
-        key
-        for key in expected_keys
-        if key not in metrics
-    ]
-
+    missing_keys = [key for key in expected_keys if key not in metrics]
     if missing_keys:
-        reporter.warn(
-            "metrics: missing recommended keys: "
+        reporter.error(
+            "metrics: missing required keys: "
             + ", ".join(missing_keys)
         )
     else:
         reporter.ok("metrics: required model quality keys are present.")
 
-    for key in ["model_mae", "model_rmse", "baseline_mae", "baseline_rmse"]:
+    for key in ["model_mae", "model_rmse", "model_mape", "baseline_mae", "baseline_rmse"]:
         if key not in metrics:
             continue
 
@@ -523,15 +541,13 @@ def validate_dataset(
     spec: DatasetSpec,
     reporter: ValidationReporter,
 ) -> pd.DataFrame | None:
-    path = validate_file_exists(spec, reporter)
-
-    if path is None:
+    if not validate_file_exists(spec, reporter):
         return None
 
     try:
-        df = read_table(path)
+        df = read_table(spec.path)
     except Exception as exc:
-        reporter.error(f"{spec.name}: could not read file '{path.name}': {exc}")
+        reporter.error(f"{spec.name}: could not read file '{spec.path.name}': {exc}")
         return None
 
     validate_non_empty(spec.name, df, reporter)
@@ -549,16 +565,9 @@ def validate_dataset(
 
 def main() -> int:
     reporter = ValidationReporter()
-
-    if not existing_search_roots():
-        reporter.error(
-            "No output folders found. Expected one of: "
-            + ", ".join(str(path.relative_to(PROJECT_ROOT)) for path in SEARCH_ROOTS)
-        )
-        reporter.print_summary()
-        return 1
-
     loaded_datasets: dict[str, pd.DataFrame] = {}
+
+    validate_model_file(reporter)
 
     for spec in DATASET_SPECS:
         df = validate_dataset(spec, reporter)
@@ -566,14 +575,49 @@ def main() -> int:
         if df is not None:
             loaded_datasets[spec.name] = df
 
+    if "predictions" in loaded_datasets:
+        validate_allowed_values(
+            "predictions",
+            loaded_datasets["predictions"],
+            "fallback_status",
+            EXPECTED_FALLBACK_STATUSES,
+            reporter,
+        )
+        validate_predictions(loaded_datasets["predictions"], reporter)
+
     if "asset_health" in loaded_datasets:
+        validate_allowed_values(
+            "asset_health",
+            loaded_datasets["asset_health"],
+            "readiness_tier",
+            EXPECTED_READINESS_TIERS,
+            reporter,
+        )
+        validate_allowed_values(
+            "asset_health",
+            loaded_datasets["asset_health"],
+            "fallback_status",
+            EXPECTED_FALLBACK_STATUSES,
+            reporter,
+        )
         validate_asset_health(loaded_datasets["asset_health"], reporter)
 
     if "recommendations" in loaded_datasets:
+        validate_allowed_values(
+            "recommendations",
+            loaded_datasets["recommendations"],
+            "readiness_tier",
+            EXPECTED_READINESS_TIERS,
+            reporter,
+        )
+        validate_allowed_values(
+            "recommendations",
+            loaded_datasets["recommendations"],
+            "recommended_action",
+            EXPECTED_RECOMMENDED_ACTIONS,
+            reporter,
+        )
         validate_recommendations(loaded_datasets["recommendations"], reporter)
-
-    if "predictions" in loaded_datasets:
-        validate_predictions(loaded_datasets["predictions"], reporter)
 
     validate_dashboard_core_data(loaded_datasets, reporter)
     validate_metrics(reporter)

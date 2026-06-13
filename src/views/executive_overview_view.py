@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -10,19 +12,24 @@ from src.ui_style import (
 )
 
 
-TIER_ORDER = ["Critical", "Maintenance Planned", "Monitor", "Ready"]
+READINESS_ORDER = [
+    "Critical",
+    "Maintenance Planned",
+    "Monitor",
+    "Ready",
+]
 
-TIER_COLOR_MAP = {
-    "Critical": "#ef4444",
+READINESS_COLOR_MAP = {
+    "Critical": "#60a5fa",
     "Maintenance Planned": "#f59e0b",
     "Monitor": "#14b8a6",
-    "Ready": "#60a5fa",
+    "Ready": "#8b5cf6",
 }
 
 
 def render_kpis(asset_health: pd.DataFrame, recommendations: pd.DataFrame) -> None:
     critical_assets = int((asset_health["readiness_tier"] == "Critical").sum())
-    average_health = float(asset_health["asset_health_score"].mean())
+    average_health_risk = float(asset_health["asset_health_score"].mean())
     average_confidence = float(asset_health["virtual_sensor_confidence"].mean())
     open_actions = int(
         (recommendations["recommended_action"] != "No immediate action").sum()
@@ -32,8 +39,8 @@ def render_kpis(asset_health: pd.DataFrame, recommendations: pd.DataFrame) -> No
 
     col1.metric("Assets monitored", f"{len(asset_health):,}")
     col2.metric("Critical assets", f"{critical_assets:,}")
-    col3.metric("Avg. health risk", f"{average_health:.1f}/100")
-    col4.metric("Virtual sensor confidence", f"{average_confidence:.1f}%")
+    col3.metric("Avg. health risk", f"{average_health_risk:.1f}/100")
+    col4.metric("Fallback confidence", f"{average_confidence:.1f}%")
     col5.metric("Open recommendations", f"{open_actions:,}")
 
 
@@ -122,9 +129,10 @@ def render_recommendations_table(display_df: pd.DataFrame) -> None:
 
 
 def build_readiness_chart(asset_health: pd.DataFrame):
-    tier_counts = asset_health["readiness_tier"].value_counts().reindex(
-        TIER_ORDER,
-        fill_value=0,
+    tier_counts = (
+        asset_health["readiness_tier"]
+        .value_counts()
+        .reindex(READINESS_ORDER, fill_value=0)
     )
 
     chart_df = tier_counts.reset_index()
@@ -136,13 +144,17 @@ def build_readiness_chart(asset_health: pd.DataFrame):
         values="Assets",
         hole=0.58,
         color="Readiness Tier",
-        color_discrete_map=TIER_COLOR_MAP,
+        color_discrete_map=READINESS_COLOR_MAP,
     )
 
     fig.update_traces(
         textposition="inside",
         textinfo="percent+label",
-        hovertemplate="<b>%{label}</b><br>Assets: %{value}<br>Share: %{percent}<extra></extra>",
+        hovertemplate=(
+            "<b>%{label}</b><br>"
+            "Assets: %{value}<br>"
+            "Share: %{percent}<extra></extra>"
+        ),
     )
 
     fig.update_layout(
@@ -170,7 +182,7 @@ def build_priority_scatter(asset_health: pd.DataFrame):
         color="readiness_tier",
         size="sensor_deviation_score",
         text="asset_label",
-        color_discrete_map=TIER_COLOR_MAP,
+        color_discrete_map=READINESS_COLOR_MAP,
         hover_data={
             "asset_id": True,
             "estimated_rul": ":.0f",
@@ -208,7 +220,7 @@ def render_executive_overview(
     predictions: pd.DataFrame,
     asset_health: pd.DataFrame,
     recommendations: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> None:
     render_page_header(
         title="Executive Overview",
@@ -234,14 +246,16 @@ def render_executive_overview(
         (recommendations["recommended_action"] == "Replace sensor").sum()
     )
 
+    # The executive summary translates technical scoring into a management decision:
+    # what needs attention now, what needs planning, and where sensor reliability matters.
     render_decision_summary_card(
         title="Current Decision Summary",
         text=(
-            f"{critical_count} assets are critical, "
-            f"{maintenance_count} require maintenance planning and "
-            f"{schedule_count} should be scheduled for maintenance within the next 10 cycles. "
-            f"Additionally, {inspect_count} sensors require inspection and "
-            f"{replace_count} sensors should be reviewed for replacement."
+            f"<strong>{critical_count}</strong> assets are critical, "
+            f"<strong>{maintenance_count}</strong> require maintenance planning and "
+            f"<strong>{schedule_count}</strong> should be scheduled for maintenance within the next 10 cycles. "
+            f"Additionally, <strong>{inspect_count}</strong> sensors require inspection and "
+            f"<strong>{replace_count}</strong> sensors should be reviewed for replacement."
         ),
     )
 
@@ -260,6 +274,9 @@ def render_executive_overview(
         )
 
     st.subheader("Top Maintenance Recommendations")
+
+    # The executive view intentionally hides most raw scoring detail. Recruiters and
+    # management users should see the prioritization outcome before the technical model.
     st.markdown(
         """
         This table focuses on the highest-priority actions only.

@@ -5,16 +5,36 @@ import logging
 import numpy as np
 import pandas as pd
 
-from src.config import ASSET_HEALTH_PATH, MAINTENANCE_RECOMMENDATIONS_PATH
+from src.config import (
+    ASSET_HEALTH_PATH,
+    MAINTENANCE_PRIORITY_WEIGHTS,
+    MAINTENANCE_RECOMMENDATIONS_PATH,
+)
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _build_action(row: pd.Series) -> tuple[str, str, str]:
-    """Convert risk scores into a maintenance-oriented recommendation.
+def _calculate_priority_score(row: pd.Series) -> float:
+    missing_columns = [
+        column for column in MAINTENANCE_PRIORITY_WEIGHTS if column not in row.index
+    ]
+    if missing_columns:
+        raise ValueError(f"Missing priority score input columns: {missing_columns}")
 
-    The recommendation layer is intentionally conservative: it supports planning and
-    inspection decisions, but it does not claim that an asset can continue safely.
+    score = sum(
+        float(row[column]) * weight
+        for column, weight in MAINTENANCE_PRIORITY_WEIGHTS.items()
+    )
+
+    return float(np.clip(score, 0, 100))
+
+
+def _build_action(row: pd.Series) -> tuple[str, str, str]:
+    """Convert risk signals into a maintenance-oriented recommendation.
+
+    The recommendation layer is intentionally rule-based. For this MVP, transparent
+    decision rules are more credible than an opaque scheduling model because the output
+    supports inspection and planning decisions, not automated maintenance execution.
     """
     if row["readiness_tier"] == "Critical":
         return (
@@ -66,16 +86,7 @@ def generate_recommendations(asset_health: pd.DataFrame | None = None) -> pd.Dat
 
     for _, row in asset_health.iterrows():
         action, time_horizon, reason = _build_action(row)
-
-        priority_score = float(
-            np.clip(
-                0.50 * row["asset_health_score"]
-                + 0.30 * row["sensor_deviation_score"]
-                + 0.20 * row["rul_risk_score"],
-                0,
-                100,
-            )
-        )
+        priority_score = _calculate_priority_score(row)
 
         rows.append(
             {
@@ -100,7 +111,13 @@ def generate_recommendations(asset_health: pd.DataFrame | None = None) -> pd.Dat
 
 def run_recommendation_generation() -> pd.DataFrame:
     recommendations = generate_recommendations()
+
     MAINTENANCE_RECOMMENDATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
     recommendations.to_parquet(MAINTENANCE_RECOMMENDATIONS_PATH, index=False)
-    LOGGER.info("Saved maintenance recommendations to %s", MAINTENANCE_RECOMMENDATIONS_PATH)
+
+    LOGGER.info(
+        "Saved maintenance recommendations to %s",
+        MAINTENANCE_RECOMMENDATIONS_PATH,
+    )
+
     return recommendations

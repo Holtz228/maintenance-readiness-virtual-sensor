@@ -7,6 +7,8 @@ import pandas as pd
 
 from src.config import (
     ASSET_HEALTH_PATH,
+    ASSET_HEALTH_WEIGHTS,
+    MAINTENANCE_PRIORITY_WEIGHTS,
     RUL_RISK_CAP_CYCLES,
     SENSOR_READINGS_PATH,
     TARGET_SENSOR,
@@ -20,10 +22,23 @@ def _clip_score(value: float | pd.Series) -> float | pd.Series:
     return np.clip(value, 0, 100)
 
 
+def _weighted_score(frame: pd.DataFrame, weights: dict[str, float]) -> pd.Series:
+    missing_columns = [column for column in weights if column not in frame.columns]
+    if missing_columns:
+        raise ValueError(f"Missing score input columns: {missing_columns}")
+
+    score = pd.Series(0.0, index=frame.index)
+    for column, weight in weights.items():
+        score += frame[column].fillna(0) * weight
+
+    return _clip_score(score)
+
+
 def _snapshot_cycle(unit_number: int, max_cycle: int) -> int:
-    # The training set runs engines to failure. For a dashboard snapshot, we intentionally
-    # observe each asset before end-of-life. Otherwise every engine would appear at RUL 0,
-    # which would be technically true for training data but misleading for decision support.
+    # C-MAPSS training data contains complete run-to-failure histories. For a dashboard
+    # snapshot, every asset is intentionally observed before the final failure cycle.
+    # Otherwise all assets would collapse into the same RUL=0 state, which is true for
+    # the raw training data but useless for maintenance decision support.
     observation_fraction = min(0.94, 0.55 + ((unit_number % 40) / 100))
     return max(1, int(max_cycle * observation_fraction))
 
@@ -51,11 +66,11 @@ def _calculate_trend_risk(
 
 
 def _assign_readiness_tier(row: pd.Series) -> str:
-    """Translate technical scores into a business-facing readiness tier.
+    """Translate technical risk signals into a business-facing readiness tier.
 
-    The tiering is calibrated for a portfolio MVP: the highest-priority assets should
-    surface as Critical when both overall health risk and maintenance priority are high.
-    This does not mean the asset is unsafe; it means the asset needs decision attention.
+    Higher scores mean higher maintenance attention, not better condition. The tier
+    helps prioritize inspection and planning work; it is not a safety certification
+    and does not authorize continued operation.
     """
     if (
         row["maintenance_priority"] >= 75
@@ -125,12 +140,14 @@ def build_asset_health(
 
     p95_error = max(float(virtual_predictions["absolute_error"].quantile(0.95)), 1e-6)
 
+    # RUL is capped because the MVP should compare maintenance urgency across assets,
+    # not pretend to produce a certified failure-time forecast.
     asset_health["rul_risk_score"] = _clip_score(
         100 * (1 - (asset_health["remaining_useful_life"] / RUL_RISK_CAP_CYCLES))
     )
 
     asset_health["sensor_deviation_score"] = _clip_score(
-        (asset_health["absolute_error"] / p95_error) * 100
+        (asset_health["absolute_error"].fillna(0) / p95_error) * 100
     )
 
     asset_health["virtual_sensor_confidence"] = asset_health["confidence_score"].fillna(0)
@@ -151,22 +168,17 @@ def build_asset_health(
 
     asset_health["trend_risk_score"] = trend_risks
 
-    # Business weighting:
-    # - RUL risk drives maintenance urgency.
-    # - Sensor deviation indicates whether the measured signal is drifting from the fallback model.
-    # - Confidence risk prevents overtrusting a weak virtual-sensor estimate.
-    # - Trend risk adds short-term signal movement without dominating the decision.
-    asset_health["asset_health_score"] = _clip_score(
-        0.45 * asset_health["rul_risk_score"]
-        + 0.25 * asset_health["sensor_deviation_score"]
-        + 0.20 * asset_health["virtual_sensor_confidence_risk"]
-        + 0.10 * asset_health["trend_risk_score"]
+    # The Asset Health Score combines multiple weak signals into one planning KPI:
+    # RUL risk drives urgency, deviation shows physical-vs-virtual sensor mismatch,
+    # confidence risk prevents overtrusting the fallback, and trend risk adds recent drift.
+    asset_health["asset_health_score"] = _weighted_score(
+        asset_health,
+        ASSET_HEALTH_WEIGHTS,
     )
 
-    asset_health["maintenance_priority"] = _clip_score(
-        0.50 * asset_health["asset_health_score"]
-        + 0.30 * asset_health["sensor_deviation_score"]
-        + 0.20 * asset_health["rul_risk_score"]
+    asset_health["maintenance_priority"] = _weighted_score(
+        asset_health,
+        MAINTENANCE_PRIORITY_WEIGHTS,
     )
 
     asset_health["readiness_tier"] = asset_health.apply(_assign_readiness_tier, axis=1)

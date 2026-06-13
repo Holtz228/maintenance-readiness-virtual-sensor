@@ -20,7 +20,7 @@ FALLBACK_ORDER = [
 FALLBACK_COLOR_MAP = {
     "Reliable fallback": "#14b8a6",
     "Limited fallback": "#f59e0b",
-    "Inspection required": "#ef4444",
+    "Inspection required": "#f97316",
     "Fallback not recommended": "#64748b",
 }
 
@@ -46,19 +46,19 @@ def _safe_bool(value: Any) -> bool:
 
 
 def _format_metric_value(value: Any) -> str:
-    if isinstance(value, float):
-        return f"{value:.4f}"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
 
     if isinstance(value, int):
         return f"{value:,}"
 
-    if isinstance(value, bool):
-        return "Yes" if value else "No"
+    if isinstance(value, float):
+        return f"{value:.4f}"
 
     return str(value)
 
 
-def get_target_sensor(metrics: dict) -> str:
+def get_target_sensor(metrics: dict[str, Any]) -> str:
     return str(metrics.get("target_sensor", TARGET_SENSOR))
 
 
@@ -91,7 +91,7 @@ def get_target_sensor_row(
     return target_rows.iloc[0]
 
 
-def calculate_mae_improvement(metrics: dict) -> float | None:
+def calculate_mae_improvement(metrics: dict[str, Any]) -> float | None:
     baseline_mae = _safe_float(metrics.get("baseline_mae"), default=0.0)
     model_mae = _safe_float(metrics.get("model_mae"), default=0.0)
 
@@ -104,18 +104,13 @@ def calculate_mae_improvement(metrics: dict) -> float | None:
 def render_quality_kpis(
     sensor_profile: pd.DataFrame,
     predictions: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> None:
-    target_sensor = get_target_sensor(metrics)
     validation_predictions = get_validation_predictions(predictions)
 
     model_mae = _safe_float(metrics.get("model_mae"))
     model_r2 = _safe_float(metrics.get("model_r2"))
     mae_improvement = calculate_mae_improvement(metrics)
-
-    validated_assets = 0
-    if not validation_predictions.empty and "unit_number" in validation_predictions.columns:
-        validated_assets = int(validation_predictions["unit_number"].nunique())
 
     avg_confidence = 0.0
     if not validation_predictions.empty and "confidence_score" in validation_predictions.columns:
@@ -129,7 +124,7 @@ def render_quality_kpis(
 
     col1, col2, col3, col4, col5 = st.columns(5)
 
-    col1.metric("Target sensor", target_sensor)
+    col1.metric("Target sensor", get_target_sensor(metrics))
     col2.metric("Model MAE", f"{model_mae:.3f}")
     col3.metric("Model R²", f"{model_r2:.3f}")
     col4.metric("MAE improvement", improvement_label)
@@ -139,7 +134,7 @@ def render_quality_kpis(
 def build_quality_gates(
     sensor_profile: pd.DataFrame,
     predictions: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> pd.DataFrame:
     target_sensor = get_target_sensor(metrics)
     target_row = get_target_sensor_row(sensor_profile, target_sensor)
@@ -156,6 +151,8 @@ def build_quality_gates(
         target_row.get("usable_for_virtual_sensor")
     )
 
+    # The quality gates are not certification gates. They are portfolio-MVP checks
+    # that keep sensor choice, baseline comparison and validation coverage transparent.
     sensor_gate_passed = (
         not target_row.empty
         and usable_for_virtual_sensor
@@ -228,10 +225,52 @@ def build_quality_gates(
     return pd.DataFrame(gate_rows)
 
 
+def render_fallback_distribution(predictions: pd.DataFrame) -> None:
+    if predictions.empty or "fallback_status" not in predictions.columns:
+        st.info("No fallback-status distribution available.")
+        return
+
+    fallback_counts = (
+        predictions["fallback_status"]
+        .value_counts()
+        .reindex(FALLBACK_ORDER, fill_value=0)
+        .reset_index()
+    )
+    fallback_counts.columns = ["Fallback Status", "Records"]
+    fallback_counts = fallback_counts[fallback_counts["Records"] > 0]
+
+    fig = px.pie(
+        fallback_counts,
+        names="Fallback Status",
+        values="Records",
+        hole=0.58,
+        color="Fallback Status",
+        color_discrete_map=FALLBACK_COLOR_MAP,
+        title="Validation Fallback Mix",
+    )
+
+    fig.update_traces(
+        textposition="inside",
+        textinfo="percent+label",
+        hovertemplate=(
+            "<b>%{label}</b><br>"
+            "Records: %{value}<br>"
+            "Share: %{percent}<extra></extra>"
+        ),
+    )
+
+    fig.update_layout(
+        legend_title_text="Fallback Status",
+        margin=dict(t=60, l=20, r=20, b=20),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def render_quality_decision(
     sensor_profile: pd.DataFrame,
     predictions: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> None:
     quality_gates = build_quality_gates(
         sensor_profile=sensor_profile,
@@ -281,45 +320,7 @@ def render_quality_decision(
         render_fallback_distribution(validation_predictions)
 
 
-def render_fallback_distribution(predictions: pd.DataFrame) -> None:
-    if predictions.empty or "fallback_status" not in predictions.columns:
-        st.info("No fallback-status distribution available.")
-        return
-
-    fallback_counts = (
-        predictions["fallback_status"]
-        .value_counts()
-        .reindex(FALLBACK_ORDER, fill_value=0)
-        .reset_index()
-    )
-    fallback_counts.columns = ["Fallback Status", "Records"]
-    fallback_counts = fallback_counts[fallback_counts["Records"] > 0]
-
-    fig = px.pie(
-        fallback_counts,
-        names="Fallback Status",
-        values="Records",
-        hole=0.58,
-        color="Fallback Status",
-        color_discrete_map=FALLBACK_COLOR_MAP,
-        title="Validation Fallback Mix",
-    )
-
-    fig.update_traces(
-        textposition="inside",
-        textinfo="percent+label",
-        hovertemplate="<b>%{label}</b><br>Records: %{value}<br>Share: %{percent}<extra></extra>",
-    )
-
-    fig.update_layout(
-        legend_title_text="Fallback Status",
-        margin=dict(t=60, l=20, r=20, b=20),
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def build_model_error_chart(metrics: dict):
+def build_model_error_chart(metrics: dict[str, Any]):
     rows = []
 
     for metric_name, baseline_key, model_key in [
@@ -372,7 +373,7 @@ def build_model_error_chart(metrics: dict):
     return fig
 
 
-def build_model_r2_chart(metrics: dict):
+def build_model_r2_chart(metrics: dict[str, Any]):
     rows = []
 
     if "baseline_r2" in metrics:
@@ -413,7 +414,7 @@ def build_model_r2_chart(metrics: dict):
     return fig
 
 
-def format_model_benchmark_table(metrics: dict) -> pd.DataFrame:
+def format_model_benchmark_table(metrics: dict[str, Any]) -> pd.DataFrame:
     rows = []
 
     metric_pairs = [
@@ -451,7 +452,7 @@ def format_model_benchmark_table(metrics: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def format_model_metrics_table(metrics: dict) -> pd.DataFrame:
+def format_model_metrics_table(metrics: dict[str, Any]) -> pd.DataFrame:
     metric_order = [
         "target_sensor",
         "feature_count",
@@ -487,8 +488,11 @@ def format_model_metrics_table(metrics: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def render_model_benchmark(metrics: dict) -> None:
+def render_model_benchmark(metrics: dict[str, Any]) -> None:
     st.subheader("Model Benchmark")
+
+    # Baseline comparison is mandatory for credibility. Without it, the ML component
+    # would look like added complexity instead of measurable decision-support value.
     st.markdown(
         """
         This view compares the virtual-sensor model against the baseline.
@@ -554,7 +558,7 @@ def render_model_benchmark(metrics: dict) -> None:
 
 def format_target_sensor_profile(
     sensor_profile: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> pd.DataFrame:
     target_sensor = get_target_sensor(metrics)
     target_row = get_target_sensor_row(sensor_profile, target_sensor)
@@ -670,8 +674,14 @@ def build_sensor_candidate_chart(sensor_profile: pd.DataFrame):
     return fig
 
 
-def render_sensor_evidence(sensor_profile: pd.DataFrame, metrics: dict) -> None:
+def render_sensor_evidence(
+    sensor_profile: pd.DataFrame,
+    metrics: dict[str, Any],
+) -> None:
     st.subheader("Sensor Evidence")
+
+    # Sensor evidence prevents the target sensor choice from looking arbitrary.
+    # The strongest case is low missingness, enough variation and meaningful RUL relationship.
     st.markdown(
         """
         This view explains why the selected target sensor is technically plausible.
@@ -807,6 +817,9 @@ def format_validation_records(predictions: pd.DataFrame) -> pd.DataFrame:
 
 def render_validation_records(predictions: pd.DataFrame) -> None:
     st.subheader("Validation Records")
+
+    # Only a filtered sample is shown. The full prediction output remains available
+    # in data/processed, while the dashboard stays focused on validation evidence.
     st.markdown(
         """
         This view shows a filtered sample of prediction records.
@@ -940,7 +953,7 @@ def render_data_quality(
     predictions: pd.DataFrame,
     asset_health: pd.DataFrame,
     recommendations: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> None:
     render_page_header(
         title="Data & Model Quality",

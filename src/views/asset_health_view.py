@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from src.ui_style import (
+    render_decision_box,
     render_decision_summary_card,
     render_page_header,
 )
@@ -26,7 +29,7 @@ READINESS_COLOR_MAP = {
 
 
 def _get_available_readiness_tiers(asset_health: pd.DataFrame) -> list[str]:
-    available_tiers = set(asset_health["readiness_tier"].dropna().unique())
+    available_tiers = set(asset_health["readiness_tier"].dropna().astype(str).unique())
 
     ordered_tiers = [
         tier
@@ -52,8 +55,8 @@ def render_asset_health_kpis(asset_health: pd.DataFrame) -> None:
 
     col1.metric("Critical assets", f"{critical_count:,}")
     col2.metric("Maintenance planned", f"{maintenance_count:,}")
-    col3.metric("Avg. health risk", f"{avg_health_risk:.1f}")
-    col4.metric("Avg. fallback confidence", f"{avg_fallback_confidence:.1f}")
+    col3.metric("Avg. health risk", f"{avg_health_risk:.1f}/100")
+    col4.metric("Avg. fallback confidence", f"{avg_fallback_confidence:.1f}%")
 
 
 def build_asset_health_scatter(filtered: pd.DataFrame):
@@ -339,6 +342,9 @@ def render_readiness_map(filtered: pd.DataFrame) -> None:
     )
 
     st.subheader("Most Exposed Assets")
+
+    # The board shows the prioritized operational view first. Detailed scoring is
+    # still available in the second tab, but not forced into the management view.
     st.markdown(
         """
         This board focuses on the assets with the highest maintenance priority.
@@ -358,6 +364,9 @@ def render_readiness_map(filtered: pd.DataFrame) -> None:
 
 def render_scoring_details(filtered: pd.DataFrame) -> None:
     st.subheader("Technical Scoring Details")
+
+    # The score explanation is included for technical credibility. It shows how the
+    # readiness layer combines RUL risk, deviation, confidence risk and trend signals.
     st.markdown(
         """
         This view explains how the readiness score is built from RUL risk,
@@ -378,7 +387,7 @@ def render_asset_health(
     predictions: pd.DataFrame,
     asset_health: pd.DataFrame,
     recommendations: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> None:
     render_page_header(
         title="Asset Health",
@@ -386,10 +395,9 @@ def render_asset_health(
         eyebrow="Readiness Analytics",
     )
 
-    st.markdown(
-        '<div class="decision-box"><strong>Decision question:</strong><br>'
-        "Which machines are most exposed from a readiness perspective?</div>",
-        unsafe_allow_html=True,
+    render_decision_box(
+        title="Decision question",
+        text="Which assets are most exposed from a readiness perspective?",
     )
 
     render_asset_health_kpis(asset_health)

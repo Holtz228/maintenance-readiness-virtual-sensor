@@ -27,7 +27,8 @@ def ensure_project_directories() -> None:
 def load_cmapss_file(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(
-            f"Raw data file not found: {path}. Place train_FD001.txt in data/raw first."
+            f"Raw data file not found: {path}. "
+            "Place the NASA C-MAPSS FD001 training file in data/raw first."
         )
 
     df = pd.read_csv(path, sep=r"\s+", header=None, names=CMAPSS_COLUMNS)
@@ -43,9 +44,11 @@ def load_cmapss_file(path: Path) -> pd.DataFrame:
 
 def add_remaining_useful_life(train_df: pd.DataFrame) -> pd.DataFrame:
     df = train_df.copy()
+
     max_cycles = df.groupby("unit_number")["time_cycle"].max().rename("max_cycle")
     df = df.merge(max_cycles, on="unit_number", how="left")
     df["remaining_useful_life"] = df["max_cycle"] - df["time_cycle"]
+
     return df
 
 
@@ -61,10 +64,13 @@ def build_sensor_profile(sensor_readings: pd.DataFrame) -> pd.DataFrame:
         if std <= 1e-9 or unique_value_count <= 1:
             correlation_with_rul = np.nan
         else:
-            correlation_with_rul = float(values.corr(sensor_readings["remaining_useful_life"]))
+            correlation_with_rul = float(
+                values.corr(sensor_readings["remaining_useful_life"])
+            )
 
-        # A virtual sensor only makes sense if the target signal actually varies.
-        # Constant or quasi-constant sensors would create impressive-looking but useless metrics.
+        # A virtual sensor only creates business value if the target signal varies.
+        # Constant or quasi-constant sensors would produce stable-looking metrics,
+        # but they would not validate a meaningful monitoring fallback.
         usable_for_virtual_sensor = (
             missing_rate <= 0.01
             and std > 1e-6
@@ -85,6 +91,7 @@ def build_sensor_profile(sensor_readings: pd.DataFrame) -> pd.DataFrame:
 
     profile = pd.DataFrame(profile_rows)
     profile["abs_correlation_with_rul"] = profile["correlation_with_rul"].abs()
+
     return profile.sort_values(
         ["usable_for_virtual_sensor", "abs_correlation_with_rul"],
         ascending=[False, False],
@@ -93,6 +100,7 @@ def build_sensor_profile(sensor_readings: pd.DataFrame) -> pd.DataFrame:
 
 def prepare_sensor_readings(raw_train_path: Path = TRAIN_RAW_PATH) -> pd.DataFrame:
     LOGGER.info("Loading NASA C-MAPSS FD001 training data from %s", raw_train_path)
+
     train_df = load_cmapss_file(raw_train_path)
     train_df = add_remaining_useful_life(train_df)
 
@@ -100,13 +108,20 @@ def prepare_sensor_readings(raw_train_path: Path = TRAIN_RAW_PATH) -> pd.DataFra
         "max_cycle",
         "remaining_useful_life",
     ]
-    train_df[numeric_columns] = train_df[numeric_columns].apply(pd.to_numeric, errors="raise")
-    train_df[["unit_number", "time_cycle"]] = train_df[["unit_number", "time_cycle"]].astype(int)
+    train_df[numeric_columns] = train_df[numeric_columns].apply(
+        pd.to_numeric,
+        errors="raise",
+    )
+    train_df[["unit_number", "time_cycle"]] = train_df[
+        ["unit_number", "time_cycle"]
+    ].astype(int)
+
     return train_df
 
 
 def run_data_preparation() -> tuple[pd.DataFrame, pd.DataFrame]:
     ensure_project_directories()
+
     sensor_readings = prepare_sensor_readings()
     sensor_profile = build_sensor_profile(sensor_readings)
 
@@ -115,4 +130,5 @@ def run_data_preparation() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     LOGGER.info("Saved sensor readings to %s", SENSOR_READINGS_PATH)
     LOGGER.info("Saved sensor profile to %s", SENSOR_PROFILE_PATH)
+
     return sensor_readings, sensor_profile

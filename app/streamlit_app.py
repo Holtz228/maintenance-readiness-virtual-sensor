@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, TypedDict
+from urllib.parse import quote
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# Streamlit starts the app from the repository root in most local runs, but this
+# path guard keeps imports stable when the app is launched from a different shell context.
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -37,24 +41,36 @@ from src.views.maintenance_planner_view import render_maintenance_planner  # noq
 from src.views.virtual_sensor_monitor_view import render_virtual_sensor_monitor  # noqa: E402
 
 
-st.set_page_config(
-    page_title="Maintenance Readiness",
-    page_icon="🛠️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-apply_global_style()
-px.defaults.template = PLOTLY_TEMPLATE
-
+DashboardData = tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    pd.DataFrame,
+    dict[str, Any],
+]
 
 PageRenderer = Callable[
-    [pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict],
+    [
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        pd.DataFrame,
+        dict[str, Any],
+    ],
     None,
 ]
 
 
-PAGES: dict[str, dict[str, str | PageRenderer]] = {
+class PageConfig(TypedDict):
+    icon: str
+    renderer: PageRenderer
+
+
+# The app entry point only coordinates navigation and data loading.
+# Business logic stays in src/, while each dashboard question is handled by a dedicated view.
+PAGES: dict[str, PageConfig] = {
     "Home": {
         "icon": "🏠",
         "renderer": render_home,
@@ -82,8 +98,22 @@ PAGES: dict[str, dict[str, str | PageRenderer]] = {
 }
 
 
+st.set_page_config(
+    page_title="Maintenance Readiness",
+    page_icon="🛠️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+apply_global_style()
+px.defaults.template = PLOTLY_TEMPLATE
+
+
 @st.cache_data(show_spinner=False)
-def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+def load_data() -> DashboardData:
+    # The dashboard is intentionally read-only. It consumes validated pipeline outputs
+    # instead of recalculating scores inside the UI, which keeps the app predictable
+    # and makes the pipeline/test boundary explicit.
     required_files = [
         SENSOR_READINGS_PATH,
         SENSOR_PROFILE_PATH,
@@ -92,15 +122,17 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame,
         MAINTENANCE_RECOMMENDATIONS_PATH,
     ]
 
-    missing = [path for path in required_files if not path.exists()]
-    if missing:
-        missing_list = "\n".join(f"- {path.relative_to(PROJECT_ROOT)}" for path in missing)
+    missing_files = [path for path in required_files if not path.exists()]
+    if missing_files:
+        missing_list = "\n".join(
+            f"- {path.relative_to(PROJECT_ROOT)}" for path in missing_files
+        )
         raise FileNotFoundError(
             "Processed files are missing. Run `python scripts/05_run_pipeline.py` first.\n"
             + missing_list
         )
 
-    metrics = {}
+    metrics: dict[str, Any] = {}
     if VIRTUAL_SENSOR_METRICS_PATH.exists():
         metrics = json.loads(VIRTUAL_SENSOR_METRICS_PATH.read_text(encoding="utf-8"))
 
@@ -115,6 +147,8 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame,
 
 
 def get_active_page_from_url() -> str:
+    # Query-parameter routing keeps the app simple and shareable without introducing
+    # Streamlit multipage boilerplate or a separate routing framework.
     page_from_url = st.query_params.get("page", "Home")
 
     if isinstance(page_from_url, list):
@@ -142,9 +176,9 @@ def render_sidebar_navigation() -> str:
     active_page = st.session_state.active_page
 
     for page_name, page_config in PAGES.items():
-        icon = str(page_config["icon"])
+        icon = page_config["icon"]
         active_class = "active" if active_page == page_name else ""
-        href = f"?page={page_name.replace(' ', '%20').replace('&', '%26')}"
+        href = f"?page={quote(page_name)}"
 
         st.sidebar.markdown(
             f"""
@@ -165,6 +199,22 @@ def render_sidebar_navigation() -> str:
     return active_page
 
 
+def render_missing_pipeline_outputs(error: FileNotFoundError) -> None:
+    # A portfolio dashboard should fail with an actionable setup message, not with
+    # a raw stack trace. This also makes the repository easier to run for reviewers.
+    render_page_header(
+        title="Pipeline Output Missing",
+        subtitle="The dashboard needs processed files before it can render the decision views.",
+        eyebrow="Setup Required",
+    )
+    st.error(str(error))
+    st.code(
+        "python scripts/05_run_pipeline.py\n"
+        "streamlit run app/streamlit_app.py",
+        language="powershell",
+    )
+
+
 def render_active_view(active_page: str) -> None:
     try:
         (
@@ -176,29 +226,11 @@ def render_active_view(active_page: str) -> None:
             metrics,
         ) = load_data()
     except FileNotFoundError as exc:
-        render_page_header(
-            title="Pipeline Output Missing",
-            subtitle="The dashboard needs processed files before it can render the decision views.",
-            eyebrow="Setup Required",
-        )
-        st.error(str(exc))
-        st.code(
-            "python scripts/05_run_pipeline.py\n"
-            "streamlit run app/streamlit_app.py",
-            language="powershell",
-        )
+        render_missing_pipeline_outputs(exc)
         return
 
-    page_config = PAGES.get(active_page)
-    if page_config is None:
-        st.session_state.active_page = "Home"
-        page_config = PAGES["Home"]
-
+    page_config = PAGES.get(active_page, PAGES["Home"])
     renderer = page_config["renderer"]
-
-    if not callable(renderer):
-        st.error(f"No renderer configured for page: {active_page}")
-        return
 
     renderer(
         sensor_readings,

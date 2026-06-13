@@ -52,7 +52,9 @@ CUSTOM_CSS = """
         font-family: "Inter", "Segoe UI", sans-serif;
     }
 
-    h1, h2, h3 {
+    h1,
+    h2,
+    h3 {
         color: #f8fafc !important;
         opacity: 1 !important;
         letter-spacing: -0.035em;
@@ -76,7 +78,10 @@ CUSTOM_CSS = """
         font-weight: 800;
     }
 
-    p, li, span, div {
+    p,
+    li,
+    span,
+    div {
         color: inherit;
     }
 
@@ -97,7 +102,7 @@ CUSTOM_CSS = """
     }
 
     .subsection-divider {
-        border-top: 1px solid rgba(148,163,184,0.14);
+        border-top: 1px solid rgba(148, 163, 184, 0.14);
         margin: 1rem 0 1rem 0;
     }
 
@@ -256,7 +261,7 @@ CUSTOM_CSS = """
         padding: 1.25rem 1.45rem;
         border-radius: 1rem;
         border: 1px solid rgba(56, 189, 248, 0.35);
-        box-shadow: 0 12px 34px rgba(0,0,0,0.30);
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.30);
         margin-bottom: 1rem;
     }
 
@@ -286,7 +291,7 @@ CUSTOM_CSS = """
         color: #ecfeff;
         font-size: 0.91rem;
         line-height: 1.5;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     }
 
     .decision-box strong {
@@ -300,7 +305,7 @@ CUSTOM_CSS = """
         border-radius: 0.95rem;
         padding: 1rem 1.15rem;
         margin: 1rem 0;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     }
 
     .decision-summary-title {
@@ -332,7 +337,7 @@ CUSTOM_CSS = """
         color: #fff7ed;
         font-size: 0.91rem;
         line-height: 1.5;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     }
 
     .warning-box strong,
@@ -347,7 +352,7 @@ CUSTOM_CSS = """
         border-radius: 1rem;
         padding: 1.1rem 1.25rem;
         margin-bottom: 1rem;
-        box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
     }
 
     .executive-summary-title {
@@ -393,7 +398,7 @@ CUSTOM_CSS = """
         border-radius: 0.95rem;
         padding: 1rem 1.05rem;
         min-height: 122px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.24);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
     }
 
     .kpi-icon {
@@ -435,10 +440,10 @@ CUSTOM_CSS = """
 
     .module-shell {
         background: #0f172a;
-        border: 1px solid rgba(148,163,184,0.20);
+        border: 1px solid rgba(148, 163, 184, 0.20);
         border-radius: 1rem;
         padding: 1rem 1rem 0.85rem 1rem;
-        box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
         margin-bottom: 1rem;
     }
 
@@ -468,11 +473,11 @@ CUSTOM_CSS = """
 
     .layer-card {
         background: #0f172a;
-        border: 1px solid rgba(148,163,184,0.24);
+        border: 1px solid rgba(148, 163, 184, 0.24);
         border-radius: 0.85rem;
         padding: 0.85rem 0.95rem;
         margin-bottom: 0.6rem;
-        box-shadow: 0 8px 22px rgba(0,0,0,0.22);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
     }
 
     .layer-number {
@@ -506,9 +511,9 @@ CUSTOM_CSS = """
     .stDataFrame {
         border-radius: 0.95rem !important;
         overflow: hidden !important;
-        border: 1px solid rgba(148,163,184,0.22);
+        border: 1px solid rgba(148, 163, 184, 0.22);
         background: #0b1220;
-        box-shadow: 0 10px 28px rgba(0,0,0,0.24);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
     }
 
     div[data-testid="stDataFrame"] {
@@ -565,10 +570,10 @@ CUSTOM_CSS = """
 
     div[data-testid="stMetric"] {
         background: #0f172a;
-        border: 1px solid rgba(148,163,184,0.22);
+        border: 1px solid rgba(148, 163, 184, 0.22);
         padding: 0.95rem;
         border-radius: 0.95rem;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
     }
 
     div[data-testid="stMetricLabel"] {
@@ -602,27 +607,27 @@ CUSTOM_CSS = """
         color: #94a3b8;
         font-size: 0.78rem;
         margin-top: 1.5rem;
-        border-top: 1px solid rgba(148,163,184,0.16);
+        border-top: 1px solid rgba(148, 163, 184, 0.16);
         padding-top: 0.8rem;
         line-height: 1.4;
     }
 
     .sidebar-nav-link {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    width: 100%;
-    border-radius: 0.85rem;
-    padding: 0.72rem 0.85rem;
-    margin-bottom: 0.35rem;
-    font-size: 0.88rem;
-    font-weight: 750;
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: #0f172a;
-    color: #dbeafe !important;
-    box-shadow: none;
-    transition: all 0.15s ease-in-out;
-    text-decoration: none !important;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        width: 100%;
+        border-radius: 0.85rem;
+        padding: 0.72rem 0.85rem;
+        margin-bottom: 0.35rem;
+        font-size: 0.88rem;
+        font-weight: 750;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: #0f172a;
+        color: #dbeafe !important;
+        box-shadow: none;
+        transition: all 0.15s ease-in-out;
+        text-decoration: none !important;
     }
 
     .sidebar-nav-link:hover {
@@ -649,12 +654,17 @@ CUSTOM_CSS = """
 """
 
 
+def _render_html(markup: str, *, sidebar: bool = False) -> None:
+    target = st.sidebar if sidebar else st
+    target.markdown(markup, unsafe_allow_html=True)
+
+
 def apply_global_style() -> None:
-    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    _render_html(CUSTOM_CSS)
 
 
 def apply_dashboard_style() -> None:
-    """Compatibility wrapper for this project."""
+    """Compatibility wrapper for older dashboard imports."""
     apply_global_style()
 
 
@@ -663,7 +673,7 @@ def render_sidebar_brand(
     subtitle: str = "Virtual Sensor Decision Support",
     logo_text: str = "MR",
 ) -> None:
-    st.sidebar.markdown(
+    _render_html(
         f"""
         <div class="sidebar-logo">
             <div class="sidebar-logo-mark">{html.escape(logo_text)}</div>
@@ -673,14 +683,14 @@ def render_sidebar_brand(
             </div>
         </div>
         """,
-        unsafe_allow_html=True,
+        sidebar=True,
     )
 
 
 def render_sidebar_section_label(label: str) -> None:
-    st.sidebar.markdown(
+    _render_html(
         f'<div class="sidebar-section-label">{html.escape(label)}</div>',
-        unsafe_allow_html=True,
+        sidebar=True,
     )
 
 
@@ -688,7 +698,7 @@ def render_sidebar_status(
     title: str = "Portfolio MVP",
     text: str = "NASA C-MAPSS sensor data + virtual sensor fallback analytics",
 ) -> None:
-    st.sidebar.markdown(
+    _render_html(
         f"""
         <div class="sidebar-status-card">
             <div class="status-dot"></div>
@@ -698,7 +708,7 @@ def render_sidebar_status(
             </div>
         </div>
         """,
-        unsafe_allow_html=True,
+        sidebar=True,
     )
 
 
@@ -711,7 +721,7 @@ def render_page_header(
     if eyebrow:
         eyebrow_html = f'<div class="module-eyebrow">{html.escape(eyebrow)}</div>'
 
-    st.markdown(
+    _render_html(
         f"""
         <div class="top-bar">
             <div>
@@ -720,20 +730,18 @@ def render_page_header(
                 <div class="subtitle">{html.escape(subtitle)}</div>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 def render_hero_card(title: str, text: str) -> None:
-    st.markdown(
+    _render_html(
         f"""
         <div class="hero-card">
             <h2>{html.escape(title)}</h2>
             <p>{html.escape(text)}</p>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -744,7 +752,7 @@ def render_executive_summary_card(
     maintenance_escalations: int,
     text: str,
 ) -> None:
-    st.markdown(
+    _render_html(
         f"""
         <div class="executive-summary-card">
             <div class="executive-summary-title">What this dashboard does</div>
@@ -768,27 +776,26 @@ def render_executive_summary_card(
             </div>
             <div class="executive-summary-text">{html.escape(text)}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 def render_decision_summary_card(title: str, text: str) -> None:
-    st.markdown(
+    # The text parameter is intentionally not escaped because some internal views use
+    # small trusted markup snippets such as <strong> to highlight the decision takeaway.
+    _render_html(
         f"""
         <div class="decision-summary-card">
             <div class="decision-summary-title">{html.escape(title)}</div>
             <div class="decision-summary-text">{text}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 def render_table_context(text: str) -> None:
-    st.markdown(
-        f'<div class="table-context-card">{html.escape(text)}</div>',
-        unsafe_allow_html=True,
+    _render_html(
+        f'<div class="table-context-card">{html.escape(text)}</div>'
     )
 
 
@@ -797,15 +804,14 @@ def render_module_header(
     title: str,
     subtitle: str,
 ) -> None:
-    st.markdown(
+    _render_html(
         f"""
         <div class="module-header">
             <div class="module-eyebrow">{html.escape(eyebrow)}</div>
             <div class="module-main-title">{html.escape(title)}</div>
             <div class="module-main-subtitle">{html.escape(subtitle)}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -821,7 +827,7 @@ def render_kpi_card(
         delta_class = "kpi-delta-positive" if positive else "kpi-delta-negative"
         delta_html = f'<div class="{delta_class}">{html.escape(delta)}</div>'
 
-    st.markdown(
+    _render_html(
         f"""
         <div class="kpi-card">
             <div class="kpi-icon">{html.escape(icon)}</div>
@@ -829,50 +835,45 @@ def render_kpi_card(
             <div class="kpi-value">{html.escape(str(value))}</div>
             {delta_html}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 def render_decision_box(title: str, text: str) -> None:
-    st.markdown(
+    _render_html(
         f"""
         <div class="decision-box">
             <strong>{html.escape(title)}</strong><br>
             {html.escape(text)}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 def render_warning_box(title: str, text: str) -> None:
-    st.markdown(
+    _render_html(
         f"""
         <div class="warning-box">
             <strong>{html.escape(title)}</strong><br>
             {html.escape(text)}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 def render_layer_card(number: int, title: str, text: str) -> None:
-    st.markdown(
+    _render_html(
         f"""
         <div class="layer-card">
             <span class="layer-number">{number}</span>
             <span class="layer-title">{html.escape(title)}</span>
             <div class="layer-text">{html.escape(text)}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
 def render_footer_status(text: str) -> None:
-    st.markdown(
-        f'<div class="footer-status">{html.escape(text)}</div>',
-        unsafe_allow_html=True,
+    _render_html(
+        f'<div class="footer-status">{html.escape(text)}</div>'
     )

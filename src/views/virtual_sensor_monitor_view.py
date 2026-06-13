@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -18,21 +20,24 @@ FALLBACK_ORDER = [
 FALLBACK_COLOR_MAP = {
     "Reliable fallback": "#14b8a6",
     "Limited fallback": "#f59e0b",
-    "Inspection required": "#ef4444",
+    "Inspection required": "#f97316",
     "Fallback not recommended": "#64748b",
 }
 
 
 def get_asset_options(predictions: pd.DataFrame) -> list[int]:
-    validation_assets = predictions.loc[
-        predictions["evaluation_split"] == "validation",
-        "unit_number",
-    ].dropna()
+    # The monitor defaults to validation assets because they were not used for
+    # model fitting. This makes the view more credible than showing training examples first.
+    if "evaluation_split" in predictions.columns:
+        validation_assets = predictions.loc[
+            predictions["evaluation_split"] == "validation",
+            "unit_number",
+        ].dropna()
 
-    if not validation_assets.empty:
-        return sorted(validation_assets.unique().tolist())
+        if not validation_assets.empty:
+            return sorted(validation_assets.astype(int).unique().tolist())
 
-    return sorted(predictions["unit_number"].dropna().unique().tolist())
+    return sorted(predictions["unit_number"].dropna().astype(int).unique().tolist())
 
 
 def format_recent_events_table(asset_predictions: pd.DataFrame) -> pd.DataFrame:
@@ -92,7 +97,6 @@ def build_signal_reconstruction_chart(asset_predictions: pd.DataFrame):
         "actual_value": "Actual sensor value",
         "predicted_value": "Virtual sensor estimate",
     }
-
     plot_df["Signal"] = plot_df["Signal"].map(signal_name_map)
 
     fig = px.line(
@@ -132,7 +136,6 @@ def build_confidence_chart(asset_predictions: pd.DataFrame):
     )
 
     fig.update_traces(mode="lines+markers")
-
     fig.update_layout(
         yaxis=dict(range=[0, 100]),
         legend_title_text="Fallback Status",
@@ -155,7 +158,6 @@ def build_error_chart(asset_predictions: pd.DataFrame):
     )
 
     fig.update_traces(mode="lines+markers")
-
     fig.update_layout(
         margin=dict(t=60, l=20, r=20, b=20),
     )
@@ -163,7 +165,10 @@ def build_error_chart(asset_predictions: pd.DataFrame):
     return fig
 
 
-def render_monitor_kpis(asset_predictions: pd.DataFrame, metrics: dict) -> None:
+def render_monitor_kpis(
+    asset_predictions: pd.DataFrame,
+    metrics: dict[str, Any],
+) -> None:
     latest = asset_predictions.iloc[-1]
 
     avg_confidence = float(asset_predictions["confidence_score"].mean())
@@ -172,8 +177,8 @@ def render_monitor_kpis(asset_predictions: pd.DataFrame, metrics: dict) -> None:
     col1, col2, col3, col4, col5 = st.columns(5)
 
     col1.metric("Target sensor", metrics.get("target_sensor", TARGET_SENSOR))
-    col2.metric("Model MAE", f"{metrics.get('model_mae', 0):.3f}")
-    col3.metric("Model R²", f"{metrics.get('model_r2', 0):.3f}")
+    col2.metric("Model MAE", f"{float(metrics.get('model_mae', 0.0)):.3f}")
+    col3.metric("Model R²", f"{float(metrics.get('model_r2', 0.0)):.3f}")
     col4.metric("Avg. confidence", f"{avg_confidence:.1f}%")
     col5.metric("Latest error", f"{latest_error:.4f}")
 
@@ -189,10 +194,13 @@ def render_signal_reconstruction(asset_predictions: pd.DataFrame) -> None:
     latest_error = float(latest["absolute_error"])
     latest_confidence = float(latest["confidence_score"])
 
+    # The interpretation deliberately avoids any operational approval wording.
+    # The virtual sensor supports monitoring judgement, not autonomous machine control.
     st.info(
-        "Interpretation: The virtual sensor is useful as a temporary monitoring fallback "
-        f"when confidence remains high and prediction error stays stable. Latest status: "
-        f"{latest_status} | latest error: {latest_error:.4f} | confidence: {latest_confidence:.1f}%."
+        "Interpretation: The virtual sensor can support temporary monitoring analysis "
+        "when confidence remains high and prediction error stays stable. "
+        f"Latest status: {latest_status} | latest error: {latest_error:.4f} | "
+        f"confidence: {latest_confidence:.1f}%."
     )
 
 
@@ -215,6 +223,9 @@ def render_fallback_confidence(asset_predictions: pd.DataFrame) -> None:
 
 def render_recent_events(asset_predictions: pd.DataFrame) -> None:
     st.subheader("Recent Sensor Events")
+
+    # The page shows the latest records only. This keeps the monitor focused on
+    # decision support instead of turning it into a raw prediction export.
     st.markdown(
         """
         This table shows the latest validation events for the selected asset.
@@ -296,7 +307,7 @@ def render_virtual_sensor_monitor(
     predictions: pd.DataFrame,
     asset_health: pd.DataFrame,
     recommendations: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> None:
     render_page_header(
         title="Virtual Sensor Monitor",

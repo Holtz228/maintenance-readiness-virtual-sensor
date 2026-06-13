@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import streamlit as st
 
@@ -19,7 +21,7 @@ def render_home(
     predictions: pd.DataFrame,
     asset_health: pd.DataFrame,
     recommendations: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> None:
     render_page_header(
         title="Maintenance Readiness & Virtual Sensor Decision Support",
@@ -45,6 +47,8 @@ def render_home(
     )
     model_r2 = float(metrics.get("model_r2", 0.0))
 
+    # The home page is the recruiter-facing entry point. It compresses the full
+    # pipeline into a few business KPIs instead of exposing technical detail too early.
     render_executive_summary_card(
         assets_monitored=len(asset_health),
         critical_assets=critical_assets,
@@ -77,19 +81,28 @@ def render_home(
         render_layer_card(
             2,
             "Virtual Sensor",
-            f"Target sensor: {metrics.get('target_sensor', TARGET_SENSOR)} with R² {metrics.get('model_r2', 0):.3f}.",
+            (
+                f"Target sensor: {metrics.get('target_sensor', TARGET_SENSOR)} "
+                f"with R² {float(metrics.get('model_r2', 0.0)):.3f}."
+            ),
         )
 
     with col3:
         render_layer_card(
             3,
             "Maintenance Decision",
-            f"{len(recommendations):,} asset-level recommendations generated from health and deviation scores.",
+            (
+                f"{len(recommendations):,} asset-level recommendations generated "
+                "from health and deviation scores."
+            ),
         )
 
     st.markdown('<div class="subsection-divider"></div>', unsafe_allow_html=True)
 
     st.subheader("MVP Data Flow")
+
+    # This is intentionally shown as a simple business flow, not as a technical
+    # architecture diagram. The page should make the decision-support chain obvious.
     st.markdown(
         """
         Sensor readings → Sensor profile → Virtual sensor prediction → Deviation monitoring → 

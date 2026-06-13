@@ -40,20 +40,41 @@ def _mape(y_true: pd.Series, y_pred: np.ndarray) -> float:
     return float(((y_true - y_pred).abs() / denominator).mean() * 100)
 
 
+def _validate_target_sensor(sensor_readings: pd.DataFrame, target_sensor: str) -> None:
+    if target_sensor not in sensor_readings.columns:
+        raise ValueError(f"Target sensor {target_sensor!r} not found in sensor readings.")
+
+    if sensor_readings[target_sensor].nunique(dropna=True) <= 1:
+        raise ValueError(
+            f"Target sensor {target_sensor!r} is constant and cannot support a virtual sensor."
+        )
+
+
 def _build_feature_columns(df: pd.DataFrame, target_sensor: str) -> list[str]:
     feature_columns: list[str] = []
+
     for column in OPERATIONAL_SETTING_COLUMNS + SENSOR_COLUMNS:
         if column == target_sensor:
             continue
+
+        if column not in df.columns:
+            continue
+
         if df[column].nunique(dropna=True) > 1 and df[column].std() > 1e-9:
             feature_columns.append(column)
+
     return feature_columns
 
 
 def _split_units_by_engine(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     units = np.array(sorted(df["unit_number"].unique()))
+
+    if len(units) < 2:
+        raise ValueError("At least two assets are required for engine-based validation.")
+
     rng = np.random.default_rng(RANDOM_STATE)
     rng.shuffle(units)
+
     split_index = int(len(units) * 0.8)
     return units[:split_index], units[split_index:]
 
@@ -78,13 +99,15 @@ def train_virtual_sensor(
     if sensor_readings is None:
         sensor_readings = pd.read_parquet(SENSOR_READINGS_PATH)
 
-    if target_sensor not in sensor_readings.columns:
-        raise ValueError(f"Target sensor {target_sensor!r} not found in sensor readings.")
+    _validate_target_sensor(sensor_readings, target_sensor)
 
     feature_columns = _build_feature_columns(sensor_readings, target_sensor)
     if not feature_columns:
         raise ValueError("No usable feature columns available for virtual sensor training.")
 
+    # The split is engine-based instead of row-based. This prevents the model from
+    # seeing earlier cycles of the same asset during training and then looking better
+    # than it would in a realistic asset-level validation scenario.
     train_units, validation_units = _split_units_by_engine(sensor_readings)
     train_mask = sensor_readings["unit_number"].isin(train_units)
     validation_mask = sensor_readings["unit_number"].isin(validation_units)
@@ -94,6 +117,8 @@ def train_virtual_sensor(
     x_validation = sensor_readings.loc[validation_mask, feature_columns]
     y_validation = sensor_readings.loc[validation_mask, target_sensor]
 
+    # A baseline keeps the model honest. The Random Forest only adds value if it
+    # reconstructs the target sensor better than a simple median-based fallback.
     baseline = DummyRegressor(strategy="median")
     baseline.fit(x_train, y_train)
     baseline_pred = baseline.predict(x_validation)
@@ -106,6 +131,7 @@ def train_virtual_sensor(
         n_jobs=-1,
     )
     model.fit(x_train, y_train)
+
     validation_pred = model.predict(x_validation)
     all_predictions = model.predict(sensor_readings[feature_columns])
 
@@ -116,6 +142,7 @@ def train_virtual_sensor(
         ["unit_number", "time_cycle", "remaining_useful_life", target_sensor]
     ].copy()
     predictions = predictions.rename(columns={target_sensor: "actual_value"})
+
     predictions["target_sensor"] = target_sensor
     predictions["predicted_value"] = all_predictions
     predictions["absolute_error"] = (
@@ -125,17 +152,21 @@ def train_virtual_sensor(
         "actual_value"
     ].abs().replace(0, np.nan)
 
-    # Confidence is a decision-support signal, not a safety certificate. Exponential decay avoids
-    # overreacting to small errors while still penalizing large deviations clearly.
+    # Confidence is a monitoring and decision-support signal, not a safety certificate.
+    # The exponential decay avoids overreacting to small deviations while still making
+    # weak fallback situations visible for maintenance planning.
     predictions["confidence_score"] = (
         100 * np.exp(-predictions["absolute_error"] / (2 * typical_error))
     ).clip(0, 100)
     predictions["fallback_status"] = _calculate_fallback_status(
         predictions["confidence_score"]
     )
+
     predictions["sensor_failure_simulated"] = True
     predictions["evaluation_split"] = np.where(
-        predictions["unit_number"].isin(validation_units), "validation", "train"
+        predictions["unit_number"].isin(validation_units),
+        "validation",
+        "train",
     )
 
     metrics: dict[str, float | str | int] = {
@@ -154,6 +185,7 @@ def train_virtual_sensor(
 
     VIRTUAL_SENSOR_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     VIRTUAL_SENSOR_PREDICTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+
     joblib.dump(
         {
             "model": model,
@@ -164,8 +196,12 @@ def train_virtual_sensor(
         VIRTUAL_SENSOR_MODEL_PATH,
     )
     predictions.to_parquet(VIRTUAL_SENSOR_PREDICTIONS_PATH, index=False)
-    VIRTUAL_SENSOR_METRICS_PATH.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    VIRTUAL_SENSOR_METRICS_PATH.write_text(
+        json.dumps(metrics, indent=2),
+        encoding="utf-8",
+    )
 
     LOGGER.info("Saved virtual sensor model to %s", VIRTUAL_SENSOR_MODEL_PATH)
     LOGGER.info("Saved virtual sensor predictions to %s", VIRTUAL_SENSOR_PREDICTIONS_PATH)
+
     return VirtualSensorResult(predictions=predictions, metrics=metrics)

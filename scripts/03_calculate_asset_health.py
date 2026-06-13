@@ -7,10 +7,20 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.asset_health import run_asset_health_calculation
+from src.virtual_sensor import train_virtual_sensor  # noqa: E402
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+
+    result = train_virtual_sensor()
+
+    print("\n=== Virtual Sensor Metrics ===")
+    for key, value in result.metrics.items():
+        print(f"{key}: {value}")
+
 
 if __name__ == "__main__":
-    asset_health = run_asset_health_calculation()
-    print(asset_health.head(10).to_string(index=False))
+    main()

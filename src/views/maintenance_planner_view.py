@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -20,7 +22,7 @@ ACTION_ORDER = [
 ]
 
 ACTION_COLOR_MAP = {
-    "Schedule maintenance": "#ef4444",
+    "Schedule maintenance": "#60a5fa",
     "Replace sensor": "#f59e0b",
     "Inspect sensor": "#38bdf8",
     "Review asset before next production window": "#a78bfa",
@@ -161,7 +163,11 @@ def build_action_distribution_chart(recommendations: pd.DataFrame):
     fig.update_traces(
         textposition="inside",
         textinfo="percent+label",
-        hovertemplate="<b>%{label}</b><br>Assets: %{value}<br>Share: %{percent}<extra></extra>",
+        hovertemplate=(
+            "<b>%{label}</b><br>"
+            "Assets: %{value}<br>"
+            "Share: %{percent}<extra></extra>"
+        ),
     )
 
     fig.update_layout(
@@ -378,6 +384,9 @@ def render_action_board(filtered: pd.DataFrame) -> None:
         )
 
     st.subheader("Recommended Actions")
+
+    # The action board is the business output of the project. It should answer
+    # what to do next before explaining every scoring component.
     st.markdown(
         """
         This board shows the highest-priority maintenance actions in a business-friendly format.
@@ -393,6 +402,9 @@ def render_action_board(filtered: pd.DataFrame) -> None:
 
 def render_technical_scoring(filtered: pd.DataFrame) -> None:
     st.subheader("Technical Scoring Details")
+
+    # Technical scoring remains available for credibility and reviewability.
+    # The recommendation layer is rule-based, so the underlying score inputs should stay visible.
     st.markdown(
         """
         This view explains why the recommendation layer produced its actions.
@@ -413,7 +425,7 @@ def render_maintenance_planner(
     predictions: pd.DataFrame,
     asset_health: pd.DataFrame,
     recommendations: pd.DataFrame,
-    metrics: dict,
+    metrics: dict[str, Any],
 ) -> None:
     render_page_header(
         title="Maintenance Planner",
@@ -438,9 +450,9 @@ def render_maintenance_planner(
     render_decision_summary_card(
         title="Maintenance Action Summary",
         text=(
-            f"The decision layer identifies {schedule_count} assets for scheduled maintenance, "
-            f"{replace_count} sensors for replacement review and "
-            f"{inspect_count} sensors for inspection before the next production window."
+            f"The decision layer identifies <strong>{schedule_count}</strong> assets for scheduled maintenance, "
+            f"<strong>{replace_count}</strong> sensors for replacement review and "
+            f"<strong>{inspect_count}</strong> sensors for inspection before the next production window."
         ),
     )
 

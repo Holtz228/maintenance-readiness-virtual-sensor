@@ -6,7 +6,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import (
+from src.config import (  # noqa: E402
     ASSET_HEALTH_PATH,
     MAINTENANCE_RECOMMENDATIONS_PATH,
     SENSOR_PROFILE_PATH,
@@ -28,8 +28,15 @@ CHECKS = [
     ("Maintenance recommendations", MAINTENANCE_RECOMMENDATIONS_PATH),
 ]
 
-if __name__ == "__main__":
+
+def main() -> None:
     print("\n=== Maintenance Readiness Project Status ===")
+
     for label, path in CHECKS:
         status = "OK" if path.exists() else "MISSING"
-        print(f"{status:8} | {label:32} | {path.relative_to(PROJECT_ROOT)}")
+        relative_path = path.relative_to(PROJECT_ROOT)
+        print(f"{status:8} | {label:32} | {relative_path}")
+
+
+if __name__ == "__main__":
+    main()
